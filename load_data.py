@@ -5,17 +5,50 @@ import os
 import re
 
 def unzip_data(path = "data", file = "data.zip"):
-    # Create a new folder to store the data ("data")
+    """
+    Since the data is divided in to many folders to be stored in a github repository,
+    this function exctract all the documents from a .zip file, which is easier to store.
+
+    Arguments
+    ---------
+
+    path : the path in which the user prefers to store the data.
+
+    file : the .zip file from which we'll extract the data
+
+    Returns
+    -------
+
+    Nothing
+    """
     os.mkdir(path)
 
-    # Unzip the data file into the new folder
     with ZipFile(file, 'r') as zip:
-        # extracting all the files
-        print('Extracting all the files now...')
         zip.extractall("data")
         print("Done!")
 
 def data_loader(path = "data/", unzip = True):
+
+    """
+    data_loader is the main function of this script, it calls all the other functions. The main task consist in
+    grouping the data compressed in the zip file into useful dataframes. It also performs a connectivity test 
+    and data harmonization if needed.
+
+    Arguments
+    ---------
+
+    path : the path in which the data is stored.
+
+    unzip : a boolean variable that tells the function if the .zip file needs to be unzip or it already is.
+
+    Returns
+    -------
+    
+    Four dataframes: fa (self explanatory), 
+                     func (refers to functional data), 
+                     gm (refers to grey matter),
+                     full_dataset (the three previous datasets in one)
+    """
 
     if unzip:
         unzip_data()
@@ -92,7 +125,7 @@ def data_loader(path = "data/", unzip = True):
         for j,name in enumerate(("FA", "FUNC", "GM_networks")):
             neuro_data[i, j, :, :] = pd.read_csv(subjects_path[sub][name], sep=',',header=None)
 
-    # 
+    # Now that we have our data into a 4d array, let's transform it to DFs
 
     # First of all, let's load the region of the brain linked to every index in the matrices
 
@@ -118,6 +151,10 @@ def data_loader(path = "data/", unzip = True):
     matrix_names = np.array(matrix_names)
     matrix_mask_names = matrix_names[np.triu_indices(matrix_names.shape[0])]
 
+    matrix_mask_names_fa = ["fa-" + name for name in matrix_mask_names]
+    matrix_mask_names_func = ["func-" + name for name in matrix_mask_names]
+    matrix_mask_names_gm = ["gm-" + name for name in matrix_mask_names]
+
     # Apply a mask to every subject of the study
 
     masked_neuro_data = np.zeros((neuro_data.shape[0], neuro_data.shape[1], 2926), dtype=np.float32)
@@ -129,9 +166,9 @@ def data_loader(path = "data/", unzip = True):
 
     # Concert the data from numpy arrays to pandas dataframes, using the subject id as index and the region names of the brain as columns
 
-    fa_data = pd.DataFrame(masked_neuro_data[:, 0, :], columns=matrix_mask_names, index=list(subjects_path))
-    func_data = pd.DataFrame(masked_neuro_data[:, 1, :], columns=matrix_mask_names, index=list(subjects_path))
-    gm_data = pd.DataFrame(masked_neuro_data[:, 2, :], columns=matrix_mask_names, index=list(subjects_path))
+    fa_data = pd.DataFrame(masked_neuro_data[:, 0, :], columns=matrix_mask_names_fa, index=list(subjects_path))
+    func_data = pd.DataFrame(masked_neuro_data[:, 1, :], columns=matrix_mask_names_func, index=list(subjects_path))
+    gm_data = pd.DataFrame(masked_neuro_data[:, 2, :], columns=matrix_mask_names_gm, index=list(subjects_path))
 
     # Finally, let's delete the main diagonal of the matrices because it doesn't add relevant information
 
@@ -147,5 +184,11 @@ def data_loader(path = "data/", unzip = True):
     func_data = func_data.iloc[:, useful_cols]
     gm_data = gm_data.iloc[:, useful_cols]
 
-    return fa_data, func_data, gm_data
+    # Concat Clinical Data
 
+    full_dataset = pd.concat([fa_data, func_data, gm_data, clinical_data.loc[:, ["age", "sex", "dd", "edss", "controls_ms"]]], join="inner", axis=1)
+    fa_data = pd.concat([fa_data, clinical_data.loc[:, ["age", "sex", "dd", "edss", "controls_ms"]]], join="inner", axis=1)
+    func_data = pd.concat([func_data, clinical_data.loc[:, ["age", "sex", "dd", "edss", "controls_ms"]]], join="inner", axis=1)
+    gm_data = pd.concat([gm_data, clinical_data.loc[:, ["age", "sex", "dd", "edss", "controls_ms"]]], join="inner", axis=1)
+
+    return full_dataset, fa_data, func_data, gm_data
