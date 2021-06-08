@@ -1,9 +1,127 @@
 import numpy as np
 import pandas as pd
 import numpy as np
-from sklearn import linear_model
+from sklearn.linear_model import LinearRegression
 from statistics import mean
 from neuroCombat import neuroCombat
+from imblearn.over_sampling import SMOTE
+from scipy.stats import mannwhitneyu, ttest_ind, bartlett, shapiro
+from statsmodels.stats.multitest import fdrcorrection, multipletests
+
+
+def classifier_pipeline(fa, gm, func):
+    """
+    This function is in charge of executing the entire data post-processing process.
+    All functions in this scripts are ran in this pipeline, from running the
+    connectivity test to data augmentation.
+
+    Arguments:
+    ---------
+
+    fa: Fractional Anisotropy Data, containing FA-weighted connectivity matrix with information related to White Matter (WM).
+
+    gm: Structural Gray Matter Brain Network Data, GM connectivity network 
+
+    func: Resting State fMRI Data, containing data from brain signal correlation/synchronization through resting-state functional connectivity
+
+    Returns:
+    --------
+
+    X: Pandas data frame containing the most statistically significant variables in order to describe the behavior of the target. 
+    This data frame has been corrected from biases such as sex, age, and "scanner effects". A data augmentation process has also 
+    been applied to deal with the imbalance of the target, which contains few Health Subjects.
+
+    y: Target (controls_ms)
+    """
+
+    index = connectivity_test(fa.iloc[:, :-5], fa.iloc[:, -5:])
+
+    X_fa, y = wm_pipeline(fa.iloc[:, :-5], fa.iloc[:, -5:], index)
+    X_gm, y = gm_pipeline(gm.iloc[:, :-5], gm.iloc[:, -5:], index)
+    X_func, y = gm_pipeline(func.iloc[:, :-5], func.iloc[:, -5:], index)
+
+    X = pd.concat([X_fa, X_gm, X_func], join="inner", axis=1)
+
+    df_final = data_augmentation(X, y)
+
+    return df_final.iloc[:, :-1], df_final.iloc[:, -1]
+
+
+def wm_pipeline(neuro_data, clinical_data, index):
+    """
+    All the post-processing data process applied to White Matter matrices are contained
+    in this pipeline (age and gender correction, harmonization, feature selection, and
+    data augmentation)
+
+    Arguments:
+    ---------
+
+    neuro_data: Fractional Anisotropy Data, containing FA-weighted connectivity matrix with information related to White Matter (WM).
+
+    clinical_data: self-explanatory.
+
+    index: list containing all the names from the features that successfully passed the connectivity test.
+
+    Returns:
+    --------
+
+    wm_final.iloc[:, :-1]: Pandas dataframe with the post-processed features
+    
+    wm_final.iloc[:, -1]: Pandas dataframe with the target variable.
+    """
+
+    wm_conec = neuro_data.iloc[:, index]
+
+    # age and sex corrections
+    wm_correct = linear_correction(clinical_data, wm_conec)
+    wm_imputed = outlier_imputation(wm_correct.iloc[:, :-5])
+
+    # harmonization
+    wm_har = harmonization(wm_imputed, clinical_data)
+
+    # Statistical Significance
+
+    # wm_final = statistically_significant_variables(wm_har, tolerance, name)
+    wm_final = types_diff(wm_har)
+
+    return wm_final.iloc[:, :-8], wm_final.iloc[:, -1]
+
+
+def gm_pipeline(neuro_data, clinical_data, index):
+    """
+    All the post-processing data process applied to Gray Matter matrices are contained
+    in this pipeline (age and gender correction, feature selection, and data augmentation)
+
+    Arguments:
+    ---------
+
+    neuro_data: Structural Gray Matter Brain Network Data or Resting State fMRI Data.
+
+    clinical_data: self-explanatory.
+
+    index: list containing all the names from the features that successfully passed the connectivity test.
+
+    Returns:
+    --------
+
+    gm_final.iloc[:, :-1]: Pandas dataframe with the post-processed features
+    
+    gm_final.iloc[:, -1]: Pandas dataframe with the target variable.
+    """
+
+    gm_conec = neuro_data.iloc[:, index]
+
+    # age and sex corrections
+    gm_correct = linear_correction(clinical_data, gm_conec)
+    gm_imputed = outlier_imputation(gm_correct.iloc[:, :-5])
+    gm_imputed = pd.concat([gm_imputed, clinical_data], axis=1, join="inner")
+
+    # Statistical Significance
+
+    # gm_final = statistically_significant_variables(gm_imputed, tolerance, name)
+    gm_final = types_diff(gm_imputed)
+
+    return gm_final.iloc[:, :-8], gm_final.iloc[:, -1]
 
 def connectivity_test(neuro_data, clinical_data):
     """
@@ -41,6 +159,7 @@ def connectivity_test(neuro_data, clinical_data):
 
     return passed_control
 
+
 def linear_correction(clinical_data, neuro_data):
     """
     Adjust the matrix data per age and sex.
@@ -64,7 +183,7 @@ def linear_correction(clinical_data, neuro_data):
     #Correct for age and sex the connectivity matrices
     for i in range(neuro_data.shape[1]):
         Y = neuro_data.values[:,i] #Extract the values inside matrix
-        regr = linear_model.LinearRegression()
+        regr = LinearRegression()
         regr.fit(X, Y)
         y_pred = regr.predict(X)
         residual = (Y - y_pred)
@@ -75,6 +194,7 @@ def linear_correction(clinical_data, neuro_data):
     corrected_data[corrected_data < 0.1] = 0
 
     return pd.concat([pd.DataFrame(corrected_data, index = neuro_data.index, columns = neuro_data.columns), clinical_data], join="inner", axis=1)
+
 
 def harmonization(neuro_data, clinical_data):
     """
@@ -113,114 +233,57 @@ def harmonization(neuro_data, clinical_data):
                      join = "inner", 
                      axis=1)
 
-def data_augmentation(X, y):
 
-    sm = SMOTE(random_state=42)
-    X_res, Y_res = sm.fit_resample(X, y)
+def outlier_imputation(neuro_data):
+    """
+    Deals with the problem of zero-values in data by using linear regression models for imputation.
 
-    df_smote_over = pd.concat([pd.DataFrame(X_res), pd.DataFrame(Y_res)], axis=1, join="inner")
+    Arguments:
+    ----------
 
-    return df_smote_over
+    neuro_data: data that have to be corrected. Important, do not include Clinical Data.
 
-def wm_pipeline(neuro_data, clinical_data, index, tolerance, name, target=-1, mw=True):
+    Returns:
+    --------
 
-    wm_conec = neuro_data.iloc[:, index]
-
-    # age and sex corrections
-    wm_correct = linear_correction(clinical_data, wm_conec)
-    wm_imputed = outlier_imputation(wm_correct.iloc[:, :-5])
-
-    # harmonization
-    wm_har = harmonization(wm_imputed, clinical_data)
-
-    # Statistical Significance
-
-    if mw:
-        # wm_final = statistically_significant_variables(wm_har, tolerance, name)
-        wm_final = types_diff(wm_har)
-        wm_final = data_augmentation(wm_final.iloc[:, :-8], wm_final.iloc[:, -1])
-
-        return wm_final.iloc[:, :-1], wm_final.iloc[:, -1]
+    pandas dataframe with the corrected data.
+    """
+    columns = [col for col in neuro_data.columns]
+    df = neuro_data.copy()
     
-    if target != -1:
-        wm_har = wm_har[wm_har.controls_ms == 1]
+    model = LinearRegression()
 
-    X = wm_har.iloc[:, :-5]
-    y = wm_har.iloc[:, target]
+    for col in columns:
+        if df[df[col] == 0].shape[0] != 0:
+            X_train, y_train = df[df[col] != 0].drop([col], axis = 1), df[df[col] != 0][col]
+            X_test = df[df[col] == 0].drop([col], axis = 1)
 
-    rf = RandomForestRegressor(n_estimators=1000, max_depth=2)
-    rf.fit(X, y)
+            model = LinearRegression()
+            model.fit(X_train, y_train)
+            pred = model.predict(X_test)
 
-    f_imp = pd.Series(rf.feature_importances_)
-    importance_sorted = pd.DataFrame(list(f_imp), index=list(X.columns),columns=["Feature Importance"])
-    importance_sorted = importance_sorted.sort_values('Feature Importance', ascending=False)[:100]
+            df.loc[X_test.index, col] = pred
+    return df
 
-    cols = [col for col in importance_sorted.index]
-
-    return X.loc[:, cols], y
-
-def gm_pipeline(neuro_data, clinical_data, index, tolerance, name, target=-1, mw=True):
-
-    gm_conec = neuro_data.iloc[:, index]
-
-    # age and sex corrections
-    gm_correct = linear_correction(clinical_data, gm_conec)
-    gm_imputed = outlier_imputation(gm_correct.iloc[:, :-5])
-    gm_imputed = pd.concat([gm_imputed, gm.iloc[:, -5:]], axis=1, join="inner")
-
-    # Statistical Significance
-
-    if mw:
-        # gm_final = statistically_significant_variables(gm_imputed, tolerance, name)
-        gm_final = types_diff(gm_imputed)
-        gm_final = data_augmentation(gm_final.iloc[:, :-8], gm_final.iloc[:, -1])
-
-        return gm_final.iloc[:, :-1], gm_final.iloc[:, -1]
-
-    if target != -1:
-        gm_imputed = gm_imputed[gm_imputed.controls_ms == 1]
-
-    X = gm_imputed.iloc[:, :-5]
-    y = gm_imputed.iloc[:, target]
-
-    rf = RandomForestRegressor(n_estimators=1000, max_depth=2)
-    rf.fit(X, y)
-
-    f_imp = pd.Series(rf.feature_importances_)
-    importance_sorted = pd.DataFrame(list(f_imp), index=list(X.columns),columns=["Feature Importance"])
-    importance_sorted = importance_sorted.sort_values('Feature Importance', ascending=False)[:100]
-
-    cols = [col for col in importance_sorted.index]
-
-    return X.loc[:, cols], y
-
-def classifier_pipeline(fa, gm, func):
-
-    index = connectivity_test(fa.iloc[:, :-5], fa.iloc[:, -5:])
-
-    X_fa, y = wm_pipeline(fa.iloc[:, :-5], fa.iloc[:, -5:], index, 0.05, "FA Data")
-    X_gm, y = gm_pipeline(gm.iloc[:, :-5], gm.iloc[:, -5:], index, 0.05, "GM Data")
-    X_func, y = gm_pipeline(func.iloc[:, :-5], func.iloc[:, -5:], index, 0.05, "FUNC Data")
-
-    X = pd.concat([X_fa, X_gm, X_func], join="inner", axis=1)
-
-    return X, y
-
-def regression_pipeline(fa, gm, func, target):
-
-    index = connectivity_test(fa.iloc[:, :-5], fa.iloc[:, -5:])
-
-    X_fa, y = wm_pipeline(fa.iloc[:, :-5], fa.iloc[:, -5:], index, 0.05, "FA Data", target = target, mw = False)
-    X_gm, y = gm_pipeline(gm.iloc[:, :-5], gm.iloc[:, -5:], index, 0.05, "GM Data", target = target, mw = False)
-    X_func, y = gm_pipeline(func.iloc[:, :-5], func.iloc[:, -5:], index, 0.05, "FUNC Data", target = target, mw = False)
-
-    X = pd.concat([X_fa, X_gm, X_func], join="inner", axis=1)
-
-    return X, y
-
-# Kamila
 
 def stats_data(data):
+    """
+    Split the data into two different datasets, one for patients and the other one for healthy subjects.
+
+    Arguments:
+    ---------
+
+    data: neuro_data + clinical_data
+
+    Returns:
+    --------
+
+    patients_fa: data related to patients
+
+    controls_fa: data related to controls
+
+    feats: clinical_data
+    """
     patients_fa = data.loc[data["controls_ms"] == 1].copy()
     patients_fa.drop(labels = ["controls_ms", "age", "sex", "dd", "edss"], axis = 1, inplace = True)
     controls_fa = data.loc[data["controls_ms"] == 0].copy()
@@ -229,7 +292,21 @@ def stats_data(data):
 
     return patients_fa, controls_fa, feats
 
+
 def MW_U(data):
+    """
+    Mann Whitney test corrected with fdrcorrection
+
+    Arguments:
+    ----------
+
+    data: neuro_data + clinical_data
+
+    Returns:
+    -------
+
+    pandas dataframe with the information related to the Mann Whitney test.
+    """
     patients_fa, controls_fa, feats = stats_data(data)
     MannWhitney_tests = pd.DataFrame(columns=['ROI', 'U', 'pvalue'])
     for attr in feats:
@@ -242,7 +319,25 @@ def MW_U(data):
 
     return MannWhitney_tests
 
+
 def statistically_significant_variables(data, tolerance, name):
+    """
+    Pipeline containing the Mann Whitney test.
+
+    Arguments:
+    ----------
+
+    data: neuro_data + clinical_data
+
+    tolerance: number between [1-0] for the p-value restriction (example 0.05)
+
+    name: Name of the data matrix, just for printing purposes.
+
+    Returns:
+    --------
+
+    pandas dataframe containind the statistically significant variables as a result from the Mann Whitney test.
+    """
     MW = MW_U(data)
     difference_fa = MW[MW["p_corr"] < tolerance]
     if len(difference_fa) <= 5:
@@ -256,9 +351,21 @@ def statistically_significant_variables(data, tolerance, name):
 
     return fa_har_new
 
-# Eloy 
 
 def types_diff(data):
+    """
+    Statistically significance correction by using bonferroni.
+
+    Arguments:
+    ---------
+
+    data: neuro_data + clinical_data
+
+    Returns:
+    -------
+
+    pandas dataframe with the features that passed the bonferroni test
+    """
     conn_stat = pd.DataFrame(columns=['ROI','pvalue'])
     feats = data.iloc[:, :-1].columns.to_list()
     for connections in feats:
@@ -295,33 +402,29 @@ def types_diff(data):
     
     return fa_har_corr
 
-def outlier_imputation(neuro_data):
+
+def data_augmentation(X, y):
     """
-    Deals with the problem of zero-values in data by using linear regression models for imputation.
+    performing data augmentation by using the SMOTE library, which created new instances by using KNN algorithm.
 
     Arguments:
-    ----------
+    ---------
 
-    neuro_data: data that have to be corrected. Important, do not include Clinical Data.
+    X: Independent variables
+
+    y: Target
 
     Returns:
-    --------
+    -------
 
-    pandas dataframe with the corrected data.
+    X: data-augmented independent variables
+
+    y: data-augmented target
     """
-    columns = [col for col in neuro_data.columns]
-    df = neuro_data.copy()
-    
-    model = LinearRegression()
 
-    for col in columns:
-        if df[df[col] == 0].shape[0] != 0:
-            X_train, y_train = df[df[col] != 0].drop([col], axis = 1), df[df[col] != 0][col]
-            X_test = df[df[col] == 0].drop([col], axis = 1)
+    sm = SMOTE(random_state=42)
+    X_res, Y_res = sm.fit_resample(X, y)
 
-            model = LinearRegression()
-            model.fit(X_train, y_train)
-            pred = model.predict(X_test)
+    df_smote_over = pd.concat([pd.DataFrame(X_res), pd.DataFrame(Y_res)], axis=1, join="inner")
 
-            df.loc[X_test.index, col] = pred
-    return df
+    return df_smote_over
