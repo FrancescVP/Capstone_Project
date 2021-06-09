@@ -14,23 +14,16 @@ def classifier_pipeline(fa, gm, func):
     This function is in charge of executing the entire data post-processing process.
     All functions in this scripts are ran in this pipeline, from running the
     connectivity test to data augmentation.
-
     Arguments:
     ---------
-
     fa: Fractional Anisotropy Data, containing FA-weighted connectivity matrix with information related to White Matter (WM).
-
     gm: Structural Gray Matter Brain Network Data, GM connectivity network 
-
     func: Resting State fMRI Data, containing data from brain signal correlation/synchronization through resting-state functional connectivity
-
     Returns:
     --------
-
     X: Pandas data frame containing the most statistically significant variables in order to describe the behavior of the target. 
     This data frame has been corrected from biases such as sex, age, and "scanner effects". A data augmentation process has also 
     been applied to deal with the imbalance of the target, which contains few Health Subjects.
-
     y: Target (controls_ms)
     """
 
@@ -52,19 +45,13 @@ def wm_pipeline(neuro_data, clinical_data, index):
     All the post-processing data process applied to White Matter matrices are contained
     in this pipeline (age and gender correction, harmonization, feature selection, and
     data augmentation)
-
     Arguments:
     ---------
-
     neuro_data: Fractional Anisotropy Data, containing FA-weighted connectivity matrix with information related to White Matter (WM).
-
     clinical_data: self-explanatory.
-
     index: list containing all the names from the features that successfully passed the connectivity test.
-
     Returns:
     --------
-
     wm_final.iloc[:, :-1]: Pandas dataframe with the post-processed features
     
     wm_final.iloc[:, -1]: Pandas dataframe with the target variable.
@@ -91,19 +78,13 @@ def gm_pipeline(neuro_data, clinical_data, index):
     """
     All the post-processing data process applied to Gray Matter matrices are contained
     in this pipeline (age and gender correction, feature selection, and data augmentation)
-
     Arguments:
     ---------
-
     neuro_data: Structural Gray Matter Brain Network Data or Resting State fMRI Data.
-
     clinical_data: self-explanatory.
-
     index: list containing all the names from the features that successfully passed the connectivity test.
-
     Returns:
     --------
-
     gm_final.iloc[:, :-1]: Pandas dataframe with the post-processed features
     
     gm_final.iloc[:, -1]: Pandas dataframe with the target variable.
@@ -127,17 +108,12 @@ def connectivity_test(neuro_data, clinical_data):
     """
     Apply a connectivity test to make sure that all the conections among controls are relevant 
     (relevant means that more than 60% of the controls have connections different than 0)
-
     Arguments:
     ---------
-
     neuro_data: neuroimaging data
-
     clinical_data: The only arguments that it must contain is controls_ms
-
     Returns:
     --------
-
     A list with all the variables that succesfully passed the test
     """
     # Get controls id
@@ -163,17 +139,12 @@ def connectivity_test(neuro_data, clinical_data):
 def linear_correction(clinical_data, neuro_data):
     """
     Adjust the matrix data per age and sex.
-
     Arguments:
     ---------
-
     clinical_data: The only two arguments that it must contain is age and sex
-
     neuro_data: neuroimaging data
-
     Returns:
     --------
-
     Pandas dataframe with the neuroimaging information corrected and the clinical data
     """
     # create an empty array
@@ -182,7 +153,7 @@ def linear_correction(clinical_data, neuro_data):
     X = np.array(list(zip(clinical_data['age'], clinical_data['sex'])))
     #Correct for age and sex the connectivity matrices
     for i in range(neuro_data.shape[1]):
-        Y = neuro_data.values[:,i] #Extract the values inside matrix
+        Y = np.array(neuro_data.values[:,i],dtype = float) #Extract the values inside matrix
         regr = LinearRegression()
         regr.fit(X, Y)
         y_pred = regr.predict(X)
@@ -199,20 +170,14 @@ def linear_correction(clinical_data, neuro_data):
 def harmonization(neuro_data, clinical_data):
     """
     Takes raw data and harmonizes it by using the Combat method.
-
     Arguments:
     ---------
-
     neuro_data: pandas dataframe or numpy array with the information related to neuroimaging or ROIs. The shape of the matrix has to be (Samples, Features)
-
     clinical_data: It contains data that we want to take into account in the harmonization process, rather if it's because we don't want to affect it 
     influence (like age or sex) or because we want to modify it's influence, scanner effects.
-
     batch_col: is the name of the column in "clinical_data" that we want to modify it's influence in the data.
-
     Returns:
     --------
-
     Pandas dataframe with the harmonized neuroimaging data concatenated with the clinical data provided
     
     """
@@ -237,15 +202,11 @@ def harmonization(neuro_data, clinical_data):
 def outlier_imputation(neuro_data):
     """
     Deals with the problem of zero-values in data by using linear regression models for imputation.
-
     Arguments:
     ----------
-
     neuro_data: data that have to be corrected. Important, do not include Clinical Data.
-
     Returns:
     --------
-
     pandas dataframe with the corrected data.
     """
     columns = [col for col in neuro_data.columns]
@@ -269,19 +230,13 @@ def outlier_imputation(neuro_data):
 def stats_data(data):
     """
     Split the data into two different datasets, one for patients and the other one for healthy subjects.
-
     Arguments:
     ---------
-
     data: neuro_data + clinical_data
-
     Returns:
     --------
-
     patients_fa: data related to patients
-
     controls_fa: data related to controls
-
     feats: clinical_data
     """
     patients_fa = data.loc[data["controls_ms"] == 1].copy()
@@ -296,15 +251,11 @@ def stats_data(data):
 def MW_U(data):
     """
     Mann Whitney test corrected with fdrcorrection
-
     Arguments:
     ----------
-
     data: neuro_data + clinical_data
-
     Returns:
     -------
-
     pandas dataframe with the information related to the Mann Whitney test.
     """
     patients_fa, controls_fa, feats = stats_data(data)
@@ -323,19 +274,13 @@ def MW_U(data):
 def statistically_significant_variables(data, tolerance, name):
     """
     Pipeline containing the Mann Whitney test.
-
     Arguments:
     ----------
-
     data: neuro_data + clinical_data
-
     tolerance: number between [1-0] for the p-value restriction (example 0.05)
-
     name: Name of the data matrix, just for printing purposes.
-
     Returns:
     --------
-
     pandas dataframe containind the statistically significant variables as a result from the Mann Whitney test.
     """
     MW = MW_U(data)
@@ -355,15 +300,11 @@ def statistically_significant_variables(data, tolerance, name):
 def types_diff(data):
     """
     Statistically significance correction by using bonferroni.
-
     Arguments:
     ---------
-
     data: neuro_data + clinical_data
-
     Returns:
     -------
-
     pandas dataframe with the features that passed the bonferroni test
     """
     conn_stat = pd.DataFrame(columns=['ROI','pvalue'])
@@ -406,19 +347,13 @@ def types_diff(data):
 def data_augmentation(X, y):
     """
     performing data augmentation by using the SMOTE library, which created new instances by using KNN algorithm.
-
     Arguments:
     ---------
-
     X: Independent variables
-
     y: Target
-
     Returns:
     -------
-
     X: data-augmented independent variables
-
     y: data-augmented target
     """
 
