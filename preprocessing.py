@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 from sklearn.linear_model import LinearRegression
 from statistics import mean
-from neuroCombat import neuroCombat
+import neuroCombat as neuroCombat
 from imblearn.over_sampling import SMOTE
 from scipy.stats import mannwhitneyu, ttest_ind, bartlett, shapiro
 from statsmodels.stats.multitest import fdrcorrection, multipletests
