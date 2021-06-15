@@ -1,1 +1,9 @@
-# Capstone_Project
+# Authors
+
+ - Francesc Vivó Pascual
+ - Eloy Martinez-Heras
+ - Kamila Nowak
+
+ # Abstract
+
+ Multiple Sclerosis is a complex disease that leads to very different physical and cognitive disabilities among its patients. Clinical relapses, largely reversible symptoms during the early stages of the disease, may be followed by the progressive disability that causes most of the disease impact. However, the conventional neuroimaging techniques are not able to describe properly the complexity of brain mechanisms of damage. On the other hand, advanced magnetic resonance imaging (MRI) techniques provide more specific quantitative information related to pathological damage than conventional MR images; and informs not only about MS lesions and brain atrophy processes but also of the normal-appearing brain. The understanding of the interplay between pathological mechanisms and connectivity networks will contribute to the understanding of some main pathological processes underlying brain damage, and improve current knowledge about CNS functioning in a disease context. The principal purpose of this project is to establish an automatic processing pipeline based on the connectivity network data to differentiate between pathological and normal brains. Which, after applying all the required preprocessing steps, were used to build different machine learning classifiers. All machine learning models have shown great capacity to distinguish between Patients and Healthy Subjects, achieving an accuracy of at least 96% in all scenarios, using the receiver operating characteristic curve (ROC curve) as the accuracy metric. It should be noted that Random Forest, Support Vector Machine, and XGBoost stood out for their great predictive capacity, reaching up to 99% accuracy. These results demonstrated the ability of machine learning methods for generating robust biomarkers to classify between healthy and diseased brains. 
