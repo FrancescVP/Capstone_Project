@@ -1,8 +1,8 @@
 # Authors
 
  - Francesc Vivó Pascual
- - Eloy Martinez-Heras
  - Kamila Nowak
+ - Eloy Martinez-Heras
 
  # Abstract
 
